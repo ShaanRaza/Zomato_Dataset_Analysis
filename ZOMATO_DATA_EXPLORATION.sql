@@ -1,0 +1,189 @@
+USE project;
+
+-- Check Datatype of table
+SELECT COLUMN_NAME, DATA_TYPE 
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'ZomatoData1'
+AND TABLE_SCHEMA = 'project';
+
+-- Check Tables in all the Databases
+SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME 
+FROM INFORMATION_SCHEMA.COLUMNS;
+
+-- View all column metadata
+SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = 'project';
+
+SELECT * FROM ZomatoData1;
+
+
+
+-- CHECKING FOR DUPLICATE
+SELECT RestaurantID, COUNT(RestaurantID) 
+FROM ZomatoData1
+GROUP BY RestaurantID
+ORDER BY 2 DESC;
+
+SELECT * FROM ZOMATO_COUNTRY;
+
+
+
+-- REMOVING UNWANTED ROWS
+DELETE FROM ZomatoData1 
+WHERE CountryCode IN (' Bar',' Grill',' Bakers & More"',' Chowringhee Lane"',' Grill & Bar"',' Chinese');
+
+DELETE FROM ZomatoData1 
+WHERE RestaurantID = '18306543';
+
+SELECT * FROM ZomatoData1;
+
+
+
+-- COUNTRY CODE COLUMN
+SELECT A.CountryCode, B.COUNTRY
+FROM ZomatoData1 A JOIN ZOMATO_COUNTRY B
+ON A.CountryCode = B.COUNTRYCODE;
+
+ALTER TABLE ZomatoData1 ADD COUNTRY_NAME VARCHAR(50);
+
+-- MERGING AND ADDING COUNTRY DETAILS FROM DIFFERENT TABLE THROUGH UPDATE WITH JOIN
+UPDATE ZomatoData1 A 
+JOIN ZOMATO_COUNTRY B ON A.CountryCode = B.COUNTRYCODE
+SET A.COUNTRY_NAME = B.COUNTRY;                         -- MySQL uses JOIN inside UPDATE, not FROM
+
+SELECT * FROM ZomatoData1;
+
+
+
+-- CITY COLUMN
+-- IDENTIFYING MISSPELLED WORDS
+SELECT DISTINCT City FROM ZomatoData1 
+WHERE City LIKE '%?%';
+
+-- PREVIEWING REPLACEMENT
+SELECT REPLACE(City, '?', 'i') 
+FROM ZomatoData1 WHERE City LIKE '%?%';
+
+-- UPDATING WITH REPLACE
+UPDATE ZomatoData1 
+SET City = REPLACE(City, '?', 'i') 
+WHERE City LIKE '%?%';
+
+-- COUNTING TOTAL RESTAURANTS IN EACH CITY OF PARTICULAR COUNTRY
+SELECT COUNTRY_NAME, City, COUNT(City) AS TOTAL_REST
+FROM ZomatoData1
+GROUP BY COUNTRY_NAME, City
+ORDER BY 1, 2, 3 DESC;
+
+
+
+-- LOCALITY COLUMN - ROLLING COUNT
+SELECT City, Locality, COUNT(Locality) AS COUNT_LOCALITY,
+SUM(COUNT(Locality)) OVER(PARTITION BY City ORDER BY City, Locality) AS ROLL_COUNT
+FROM ZomatoData1
+WHERE COUNTRY_NAME = 'INDIA'
+GROUP BY Locality, City
+ORDER BY 1, 2, 3 DESC;
+
+
+
+-- DROP COLUMNS
+ALTER TABLE ZomatoData1 DROP COLUMN Address;
+ALTER TABLE ZomatoData1 DROP COLUMN LocalityVerbose;
+
+
+
+-- CUISINES COLUMN
+SELECT Cuisines, COUNT(Cuisines) 
+FROM ZomatoData1
+WHERE Cuisines IS NULL OR Cuisines = ' '
+GROUP BY Cuisines
+ORDER BY 2 DESC;
+
+SELECT Cuisines, COUNT(Cuisines)
+FROM ZomatoData1
+GROUP BY Cuisines
+ORDER BY 2 DESC;
+
+
+
+-- CURRENCY COLUMN
+SELECT Currency, COUNT(Currency) 
+FROM ZomatoData1
+GROUP BY Currency
+ORDER BY 2 DESC;
+
+
+
+-- YES/NO COLUMNS
+SELECT DISTINCT Has_Table_booking FROM ZomatoData1;
+SELECT DISTINCT Has_Online_delivery FROM ZomatoData1;
+SELECT DISTINCT Is_delivering_now FROM ZomatoData1;
+SELECT DISTINCT Switch_to_order_menu FROM ZomatoData1;
+
+
+
+-- DROP COLUMN
+ALTER TABLE ZomatoData1 DROP COLUMN Switch_to_order_menu;
+
+
+
+-- PRICE RANGE COLUMN
+SELECT DISTINCT Price_range FROM ZomatoData1;
+
+
+
+-- VOTES COLUMN
+ALTER TABLE ZomatoData1 MODIFY COLUMN Votes INT;        -- MySQL uses MODIFY COLUMN, not ALTER COLUMN
+
+SELECT MIN(Votes) AS MIN_VT, AVG(Votes) AS AVG_VT, MAX(Votes) AS MAX_VT
+FROM ZomatoData1;
+
+
+
+-- COST COLUMN
+ALTER TABLE ZomatoData1 MODIFY COLUMN Average_Cost_for_two FLOAT;   -- MySQL uses MODIFY COLUMN
+
+SELECT Currency,
+MIN(Average_Cost_for_two) AS MIN_CST,
+AVG(Average_Cost_for_two) AS AVG_CST,
+MAX(Average_Cost_for_two) AS MAX_CST
+FROM ZomatoData1
+GROUP BY Currency;
+
+
+
+-- RATING COLUMN
+SELECT MIN(Rating),
+ROUND(AVG(CAST(Rating AS DECIMAL)), 1),
+MAX(Rating)
+FROM ZomatoData1;
+
+SELECT CAST(Rating AS DECIMAL) AS NUM 
+FROM ZomatoData1 WHERE CAST(Rating AS DECIMAL) >= 4;
+
+ALTER TABLE ZomatoData1 MODIFY COLUMN Rating DECIMAL(3,1);  -- MySQL needs precision for DECIMAL
+
+SELECT Rating FROM ZomatoData1 WHERE Rating >= 4;
+
+SELECT Rating, CASE
+WHEN Rating >= 1 AND Rating < 2.5 THEN 'POOR'
+WHEN Rating >= 2.5 AND Rating < 3.5 THEN 'GOOD'
+WHEN Rating >= 3.5 AND Rating < 4.5 THEN 'GREAT'
+WHEN Rating >= 4.5 THEN 'EXCELLENT'
+END AS RATE_CATEGORY
+FROM ZomatoData1;
+
+ALTER TABLE ZomatoData1 ADD RATE_CATEGORY VARCHAR(20);
+
+SELECT * FROM ZomatoData1;
+
+
+
+-- UPDATING NEW COLUMN WITH CASE-WHEN
+UPDATE ZomatoData1 SET RATE_CATEGORY = CASE
+WHEN Rating >= 1 AND Rating < 2.5 THEN 'POOR'
+WHEN Rating >= 2.5 AND Rating < 3.5 THEN 'GOOD'
+WHEN Rating >= 3.5 AND Rating < 4.5 THEN 'GREAT'
+WHEN Rating >= 4.5 THEN 'EXCELLENT'
+END;

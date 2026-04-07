@@ -1,0 +1,158 @@
+import pandas as pd
+
+# Load tables
+df = pd.read_csv('ZomatoData1.csv')          # or pd.read_excel() if Excel
+country_df = pd.read_csv('ZOMATO_COUNTRY.csv')
+
+
+
+# ── CHECK DATATYPE OF TABLE ──────────────────────────────────────────────────
+print(df.dtypes)
+print(df.info())
+
+
+
+# ── CHECK SHAPE & PREVIEW ────────────────────────────────────────────────────
+print(df.shape)
+print(df.head())
+
+
+
+# ── CHECKING FOR DUPLICATES ──────────────────────────────────────────────────
+dup_check = df.groupby('RestaurantID')['RestaurantID'].count().reset_index(name='COUNT')
+dup_check = dup_check.sort_values('COUNT', ascending=False)
+print(dup_check)
+
+
+
+# ── REMOVING UNWANTED ROWS ───────────────────────────────────────────────────
+unwanted = [' Bar',' Grill',' Bakers & More"',' Chowringhee Lane"',' Grill & Bar"',' Chinese']
+df = df[~df['CountryCode'].isin(unwanted)]
+df = df[df['RestaurantID'] != '18306543']
+print(df)
+
+
+
+# ── COUNTRY CODE COLUMN ──────────────────────────────────────────────────────
+# Preview join
+country_preview = df[['CountryCode']].merge(country_df[['COUNTRYCODE','COUNTRY']],
+                                             left_on='CountryCode',
+                                             right_on='COUNTRYCODE')
+print(country_preview)
+
+# Add COUNTRY_NAME column by merging
+df = df.merge(country_df[['COUNTRYCODE','COUNTRY']],
+              left_on='CountryCode',
+              right_on='COUNTRYCODE',
+              how='left')
+df.rename(columns={'COUNTRY': 'COUNTRY_NAME'}, inplace=True)
+df.drop(columns=['COUNTRYCODE'], inplace=True)
+print(df)
+
+
+
+# ── CITY COLUMN ──────────────────────────────────────────────────────────────
+# Identify misspelled words
+print(df[df['City'].str.contains(r'\?', na=False)]['City'].unique())
+
+# Preview replacement
+print(df[df['City'].str.contains(r'\?', na=False)]['City'].str.replace('?', 'i', regex=False))
+
+# Update misspelled cities
+df['City'] = df['City'].str.replace('?', 'i', regex=False)
+
+# Count total restaurants in each city per country
+city_count = df.groupby(['COUNTRY_NAME', 'City'])['City'].count().reset_index(name='TOTAL_REST')
+city_count = city_count.sort_values(['COUNTRY_NAME', 'City', 'TOTAL_REST'], ascending=[True, True, False])
+print(city_count)
+
+
+
+# ── LOCALITY COLUMN - ROLLING COUNT ─────────────────────────────────────────
+india_df = df[df['COUNTRY_NAME'] == 'INDIA'].copy()
+locality_count = india_df.groupby(['City', 'Locality'])['Locality'].count().reset_index(name='COUNT_LOCALITY')
+locality_count = locality_count.sort_values(['City', 'Locality'])
+locality_count['ROLL_COUNT'] = locality_count.groupby('City')['COUNT_LOCALITY'].cumsum()
+print(locality_count)
+
+
+
+# ── DROP COLUMNS ─────────────────────────────────────────────────────────────
+df.drop(columns=['Address', 'LocalityVerbose'], inplace=True)
+
+
+
+# ── CUISINES COLUMN ──────────────────────────────────────────────────────────
+# Null or empty cuisines
+print(df[df['Cuisines'].isna() | (df['Cuisines'].str.strip() == '')]['Cuisines'].value_counts())
+
+# All cuisine counts
+print(df['Cuisines'].value_counts())
+
+
+
+# ── CURRENCY COLUMN ──────────────────────────────────────────────────────────
+print(df['Currency'].value_counts())
+
+
+
+# ── YES/NO COLUMNS ───────────────────────────────────────────────────────────
+print(df['Has_Table_booking'].unique())
+print(df['Has_Online_delivery'].unique())
+print(df['Is_delivering_now'].unique())
+print(df['Switch_to_order_menu'].unique())
+
+
+
+# ── DROP COLUMN ──────────────────────────────────────────────────────────────
+df.drop(columns=['Switch_to_order_menu'], inplace=True)
+
+
+
+# ── PRICE RANGE COLUMN ───────────────────────────────────────────────────────
+print(df['Price_range'].unique())
+
+
+
+# ── VOTES COLUMN ─────────────────────────────────────────────────────────────
+df['Votes'] = df['Votes'].astype(int)
+print(df['Votes'].agg(['min', 'mean', 'max']))
+
+
+
+# ── COST COLUMN ──────────────────────────────────────────────────────────────
+df['Average_Cost_for_two'] = df['Average_Cost_for_two'].astype(float)
+print(df.groupby('Currency')['Average_Cost_for_two'].agg(['min', 'mean', 'max']))
+
+
+
+# ── RATING COLUMN ────────────────────────────────────────────────────────────
+df['Rating'] = pd.to_numeric(df['Rating'], errors='coerce')
+
+print(df['Rating'].agg(['min', 'mean', 'max']))
+print(df['Rating'].mean().round(1))
+
+# Ratings >= 4
+print(df[df['Rating'] >= 4]['Rating'])
+
+# RATE_CATEGORY using CASE-WHEN equivalent
+def rate_category(rating):
+    if 1 <= rating < 2.5:
+        return 'POOR'
+    elif 2.5 <= rating < 3.5:
+        return 'GOOD'
+    elif 3.5 <= rating < 4.5:
+        return 'GREAT'
+    elif rating >= 4.5:
+        return 'EXCELLENT'
+
+df['RATE_CATEGORY'] = df['Rating'].apply(rate_category)
+
+# Alternatively using pd.cut (cleaner)
+df['RATE_CATEGORY'] = pd.cut(df['Rating'],
+                              bins=[1, 2.5, 3.5, 4.5, float('inf')],
+                              labels=['POOR', 'GOOD', 'GREAT', 'EXCELLENT'],
+                              right=False)
+
+print(df[['Rating', 'RATE_CATEGORY']])
+print(df.head())

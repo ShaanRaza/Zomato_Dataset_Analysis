@@ -1,0 +1,513 @@
+import pandas as pd
+import numpy as np
+
+# =========================================================
+# ZOMATO DATA ANALYSIS – MARKET EXPANSION & PERFORMANCE
+# PANDAS VERSION
+# =========================================================
+
+# Load dataset
+df = pd.read_csv("zomato.csv")
+
+# -----------------------------
+# Basic cleaning
+# -----------------------------
+# Convert numeric columns safely
+numeric_cols = ["RestaurantID", "Votes", "Rating", "Average_Cost_for_two", "Price_range"]
+for col in numeric_cols:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+# Standardize text columns
+text_cols = ["COUNTRY_NAME", "City", "Locality", "Has_Online_delivery", "Has_Table_booking", "Cuisines", "Restaurant Name"]
+for col in text_cols:
+    if col in df.columns:
+        df[col] = df[col].astype(str).str.strip()
+
+# India-only subset
+india_df = df[df["COUNTRY_NAME"].str.upper() == "INDIA"].copy()
+
+# =========================================================
+# QUESTION 1: Display the full Zomato dataset
+# =========================================================
+q1_full_dataset = df.copy()
+
+
+# =========================================================
+# QUESTION 2: What is the rolling / moving count of restaurants
+# across localities within Indian cities?
+# =========================================================
+q2 = (
+    india_df.groupby(["COUNTRY_NAME", "City", "Locality"])
+    .size()
+    .reset_index(name="TOTAL_REST")
+    .sort_values(["City", "Locality"], ascending=[True, False])
+)
+
+q2["ROLLING_TOTAL_REST"] = q2.groupby("City")["TOTAL_REST"].cumsum()
+
+
+# =========================================================
+# QUESTION 3: What percentage of total restaurants belongs to each country?
+# =========================================================
+country_counts = (
+    df.groupby("COUNTRY_NAME")["RestaurantID"]
+    .count()
+    .reset_index(name="REST_COUNT")
+)
+
+total_rest = df["RestaurantID"].count()
+
+q3 = country_counts.copy()
+q3["REST_PERCENTAGE"] = round((q3["REST_COUNT"] / total_rest) * 100, 2)
+q3 = q3.sort_values("REST_PERCENTAGE", ascending=False)
+
+
+# =========================================================
+# QUESTION 4: Which countries have restaurants offering online
+# delivery, and what percentage of each country’s restaurants provide it?
+# =========================================================
+country_rest = (
+    df.groupby("COUNTRY_NAME")["RestaurantID"]
+    .count()
+    .reset_index(name="REST_COUNT")
+)
+
+delivery_counts = (
+    df[df["Has_Online_delivery"].str.upper() == "YES"]
+    .groupby("COUNTRY_NAME")["RestaurantID"]
+    .count()
+    .reset_index(name="TOTAL_REST_WITH_DELIVERY")
+)
+
+q4 = delivery_counts.merge(country_rest, on="COUNTRY_NAME", how="left")
+q4["ONLINE_DELIVERY_PERCENTAGE"] = round((q4["TOTAL_REST_WITH_DELIVERY"] / q4["REST_COUNT"]) * 100, 2)
+q4 = q4.sort_values("TOTAL_REST_WITH_DELIVERY", ascending=False)
+
+
+# =========================================================
+# QUESTION 5: Which city and locality in India has the maximum
+# number of restaurants listed on Zomato?
+# =========================================================
+locality_counts = (
+    india_df.groupby(["City", "Locality"])["RestaurantID"]
+    .count()
+    .reset_index(name="REST_COUNT")
+)
+
+max_rest_count = locality_counts["REST_COUNT"].max()
+
+q5 = locality_counts[locality_counts["REST_COUNT"] == max_rest_count].copy()
+
+
+# =========================================================
+# QUESTION 6: What types of cuisines are available in the Indian
+# locality with the maximum number of restaurants?
+# =========================================================
+top_localities = q5["Locality"].unique()
+
+q6 = india_df[india_df["Locality"].isin(top_localities)][["Locality", "Cuisines"]].copy()
+
+
+# =========================================================
+# QUESTION 7: What is the most common cuisine in the Indian locality
+# with the maximum number of restaurants?
+# =========================================================
+cuisine_split_top = (
+    india_df[india_df["Locality"].isin(top_localities)]
+    .assign(Cuisine=india_df[india_df["Locality"].isin(top_localities)]["Cuisines"].str.split(","))
+    .explode("Cuisine")
+)
+
+cuisine_split_top["Cuisine"] = cuisine_split_top["Cuisine"].str.strip()
+
+q7 = (
+    cuisine_split_top.groupby("Cuisine")
+    .size()
+    .reset_index(name="CUISINE_COUNT")
+    .sort_values("CUISINE_COUNT", ascending=False)
+)
+
+
+# =========================================================
+# QUESTION 8: Which localities in India have the lowest number of
+# restaurants listed on Zomato?
+# =========================================================
+min_rest_count = locality_counts["REST_COUNT"].min()
+
+q8 = locality_counts[locality_counts["REST_COUNT"] == min_rest_count].sort_values("City").copy()
+
+
+# =========================================================
+# QUESTION 9: How many restaurants offer table booking in the Indian
+# locality with the maximum number of restaurants?
+# =========================================================
+q9 = (
+    india_df[
+        (india_df["Locality"].isin(top_localities)) &
+        (india_df["Has_Table_booking"].str.upper() == "YES")
+    ]
+    .groupby("Locality")
+    .size()
+    .reset_index(name="TABLE_BOOKING_OPTION")
+)
+
+
+# =========================================================
+# QUESTION 10: How does rating differ for restaurants with and without
+# table booking in Connaught Place?
+# =========================================================
+connaught_df = india_df[india_df["Locality"].str.upper() == "CONNAUGHT PLACE"].copy()
+
+with_table = connaught_df[connaught_df["Has_Table_booking"].str.upper() == "YES"]
+without_table = connaught_df[connaught_df["Has_Table_booking"].str.upper() == "NO"]
+
+q10 = pd.DataFrame({
+    "TABLE_BOOKING_OPT": ["WITH_TABLE", "WITHOUT_TABLE"],
+    "TOTAL_REST": [len(with_table), len(without_table)],
+    "AVG_RATING": [
+        round(with_table["Rating"].mean(), 2),
+        round(without_table["Rating"].mean(), 2)
+    ]
+})
+
+
+# =========================================================
+# QUESTION 11: What is the average rating and restaurant count
+# locality-wise across all countries and cities?
+# =========================================================
+q11 = (
+    df.groupby(["COUNTRY_NAME", "City", "Locality"])
+    .agg(
+        TOTAL_REST=("RestaurantID", "count"),
+        AVG_RATING=("Rating", "mean")
+    )
+    .reset_index()
+)
+
+q11["AVG_RATING"] = q11["AVG_RATING"].round(2)
+q11 = q11.sort_values("TOTAL_REST", ascending=False)
+
+
+# =========================================================
+# QUESTION 12: Which restaurants in India offer table booking and
+# online delivery, have moderate cost for two, high votes,
+# high ratings, and Indian cuisine?
+# =========================================================
+q12 = india_df[
+    (india_df["Has_Table_booking"].str.upper() == "YES") &
+    (india_df["Has_Online_delivery"].str.upper() == "YES") &
+    (india_df["Price_range"] <= 3) &
+    (india_df["Votes"] > 1000) &
+    (india_df["Average_Cost_for_two"] < 1000) &
+    (india_df["Rating"] > 4) &
+    (india_df["Cuisines"].str.contains("Indian", case=False, na=False))
+].copy()
+
+
+# =========================================================
+# QUESTION 13: Among highly rated restaurants, how many offer
+# table booking across each price range?
+# =========================================================
+q13 = (
+    df[
+        (df["Rating"] >= 4.5) &
+        (df["Has_Table_booking"].str.upper() == "YES")
+    ]
+    .groupby("Price_range")
+    .size()
+    .reset_index(name="NO_OF_REST")
+    .sort_values("Price_range")
+)
+
+
+# =========================================================
+# QUESTION 14: Which Indian cities are oversaturated, balanced,
+# or underserved based on demand per restaurant?
+# =========================================================
+q14 = (
+    india_df.groupby("City")
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        total_votes=("Votes", "sum"),
+        avg_rating=("Rating", "mean")
+    )
+    .reset_index()
+)
+
+q14["votes_per_restaurant"] = round(q14["total_votes"] / q14["total_restaurants"], 2)
+q14["avg_rating"] = q14["avg_rating"].round(2)
+
+q14["market_status"] = np.select(
+    [
+        (q14["votes_per_restaurant"] >= 150) & (q14["total_restaurants"] < 50),
+        (q14["votes_per_restaurant"] < 80) & (q14["total_restaurants"] > 100)
+    ],
+    [
+        "UNDERSERVED_OPPORTUNITY",
+        "OVERSATURATED"
+    ],
+    default="BALANCED"
+)
+
+q14 = q14.sort_values(["votes_per_restaurant", "avg_rating"], ascending=[False, False])
+
+
+# =========================================================
+# QUESTION 15: Which localities within each city have the highest
+# opportunity based on demand and ratings?
+# =========================================================
+q15 = (
+    india_df.groupby(["City", "Locality"])
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        total_votes=("Votes", "sum"),
+        avg_rating=("Rating", "mean")
+    )
+    .reset_index()
+)
+
+q15["votes_per_restaurant"] = round(q15["total_votes"] / q15["total_restaurants"], 2)
+q15["avg_rating"] = q15["avg_rating"].round(2)
+
+q15 = q15.sort_values(["City", "votes_per_restaurant", "avg_rating"], ascending=[True, False, False])
+q15["locality_rank_within_city"] = q15.groupby("City")[["votes_per_restaurant", "avg_rating"]].cumcount() + 1
+
+
+# =========================================================
+# QUESTION 16: Does online delivery correlate with better ratings,
+# engagement, and cost across restaurants in India?
+# =========================================================
+q16 = (
+    india_df.groupby("Has_Online_delivery")
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        avg_rating=("Rating", "mean"),
+        avg_votes=("Votes", "mean"),
+        avg_cost_for_two=("Average_Cost_for_two", "mean")
+    )
+    .reset_index()
+)
+
+q16[["avg_rating", "avg_votes", "avg_cost_for_two"]] = q16[["avg_rating", "avg_votes", "avg_cost_for_two"]].round(2)
+
+
+# =========================================================
+# QUESTION 17: How does online delivery impact restaurant performance
+# across different price segments?
+# =========================================================
+q17 = (
+    india_df.groupby(["Price_range", "Has_Online_delivery"])
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        avg_rating=("Rating", "mean"),
+        avg_votes=("Votes", "mean")
+    )
+    .reset_index()
+    .sort_values(["Price_range", "Has_Online_delivery"])
+)
+
+q17[["avg_rating", "avg_votes"]] = q17[["avg_rating", "avg_votes"]].round(2)
+
+
+# =========================================================
+# QUESTION 18: How does table booking impact restaurant ratings
+# and engagement across different price ranges?
+# =========================================================
+q18 = (
+    india_df.groupby(["Price_range", "Has_Table_booking"])
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        avg_rating=("Rating", "mean"),
+        avg_votes=("Votes", "mean")
+    )
+    .reset_index()
+    .sort_values(["Price_range", "Has_Table_booking"])
+)
+
+q18[["avg_rating", "avg_votes"]] = q18[["avg_rating", "avg_votes"]].round(2)
+
+
+# =========================================================
+# QUESTION 19: Which restaurant configuration performs best in each city
+# by pricing, delivery, and booking attributes?
+# =========================================================
+q19 = (
+    india_df.groupby(["City", "Price_range", "Has_Online_delivery", "Has_Table_booking"])
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        avg_rating=("Rating", "mean"),
+        avg_votes=("Votes", "mean"),
+        avg_cost=("Average_Cost_for_two", "mean")
+    )
+    .reset_index()
+)
+
+q19[["avg_rating", "avg_votes", "avg_cost"]] = q19[["avg_rating", "avg_votes", "avg_cost"]].round(2)
+q19 = q19[q19["total_restaurants"] >= 5].copy()
+q19 = q19.sort_values(["City", "avg_rating", "avg_votes"], ascending=[True, False, False])
+q19["segment_rank_in_city"] = q19.groupby("City").cumcount() + 1
+
+
+# =========================================================
+# QUESTION 20: Which cuisines show the highest demand per restaurant
+# in each city?
+# =========================================================
+cuisine_split = (
+    india_df.assign(Cuisine=india_df["Cuisines"].str.split(","))
+    .explode("Cuisine")
+    .copy()
+)
+
+cuisine_split["Cuisine"] = cuisine_split["Cuisine"].str.strip()
+
+q20 = (
+    cuisine_split.groupby(["City", "Cuisine"])
+    .agg(
+        restaurant_count=("RestaurantID", "count"),
+        total_votes=("Votes", "sum"),
+        avg_rating=("Rating", "mean")
+    )
+    .reset_index()
+)
+
+q20["votes_per_restaurant"] = round(q20["total_votes"] / q20["restaurant_count"], 2)
+q20["avg_rating"] = q20["avg_rating"].round(2)
+q20 = q20[q20["restaurant_count"] >= 3].copy()
+q20 = q20.sort_values(["City", "votes_per_restaurant", "avg_rating"], ascending=[True, False, False])
+q20["cuisine_opportunity_rank"] = q20.groupby("City").cumcount() + 1
+
+
+# =========================================================
+# QUESTION 21: Which pricing segment performs best in terms of ratings,
+# votes, and average cost?
+# =========================================================
+india_df["restaurant_segment"] = np.select(
+    [
+        india_df["Price_range"].isin([1, 2]),
+        india_df["Price_range"] == 3,
+        india_df["Price_range"].isin([4, 5])
+    ],
+    [
+        "BUDGET",
+        "MID_RANGE",
+        "PREMIUM"
+    ],
+    default="OTHER"
+)
+
+q21 = (
+    india_df.groupby("restaurant_segment")
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        avg_rating=("Rating", "mean"),
+        avg_votes=("Votes", "mean"),
+        avg_cost=("Average_Cost_for_two", "mean")
+    )
+    .reset_index()
+)
+
+q21[["avg_rating", "avg_votes", "avg_cost"]] = q21[["avg_rating", "avg_votes", "avg_cost"]].round(2)
+q21 = q21.sort_values("avg_votes", ascending=False)
+
+
+# =========================================================
+# QUESTION 22: Which restaurants can be considered hidden gems based on
+# high ratings, strong votes, and affordable pricing?
+# =========================================================
+q22 = india_df[
+    (india_df["Rating"] >= 4.3) &
+    (india_df["Votes"] >= 500) &
+    (india_df["Average_Cost_for_two"] <= 800)
+][["Restaurant Name", "City", "Locality", "Cuisines", "Average_Cost_for_two", "Rating", "Votes"]].copy()
+
+q22 = q22.sort_values(["Rating", "Votes"], ascending=[False, False])
+
+
+# =========================================================
+# QUESTION 23: What are the top 5 restaurants in each city based on
+# rating and votes?
+# =========================================================
+q23 = india_df[["City", "Restaurant Name", "Locality", "Rating", "Votes"]].copy()
+q23 = q23.sort_values(["City", "Rating", "Votes"], ascending=[True, False, False])
+q23["rn"] = q23.groupby("City").cumcount() + 1
+q23 = q23[q23["rn"] <= 5].copy()
+
+
+# =========================================================
+# QUESTION 24: Which Indian cities should be prioritized for
+# restaurant expansion using a composite expansion score?
+# =========================================================
+q24 = (
+    india_df.groupby("City")
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        total_votes=("Votes", "sum"),
+        avg_rating=("Rating", "mean"),
+        avg_cost_for_two=("Average_Cost_for_two", "mean"),
+        online_delivery_restaurants=("Has_Online_delivery", lambda x: (x.str.upper() == "YES").sum())
+    )
+    .reset_index()
+)
+
+q24["votes_per_restaurant"] = round(q24["total_votes"] / q24["total_restaurants"], 2)
+q24["online_delivery_pct"] = round((q24["online_delivery_restaurants"] / q24["total_restaurants"]) * 100, 2)
+q24["avg_rating"] = q24["avg_rating"].round(2)
+q24["avg_cost_for_two"] = q24["avg_cost_for_two"].round(2)
+
+q24["expansion_score"] = round(
+    (q24["votes_per_restaurant"] * 0.50) +
+    (q24["avg_rating"] * 20 * 0.30) -
+    (q24["total_restaurants"] * 0.20),
+    2
+)
+
+q24 = q24.sort_values("expansion_score", ascending=False)
+q24["city_expansion_rank"] = range(1, len(q24) + 1)
+
+
+# =========================================================
+# QUESTION 25: How can cities be classified into expansion
+# opportunity buckets?
+# =========================================================
+q25 = (
+    india_df.groupby("City")
+    .agg(
+        total_restaurants=("RestaurantID", "count"),
+        total_votes=("Votes", "sum"),
+        avg_rating=("Rating", "mean")
+    )
+    .reset_index()
+)
+
+q25["votes_per_restaurant"] = round(q25["total_votes"] / q25["total_restaurants"], 2)
+q25["avg_rating"] = q25["avg_rating"].round(2)
+
+q25["opportunity_bucket"] = np.select(
+    [
+        (q25["votes_per_restaurant"] >= 200) & (q25["total_restaurants"] < 80),
+        (q25["votes_per_restaurant"].between(120, 199))
+    ],
+    [
+        "HIGH_OPPORTUNITY",
+        "MODERATE_OPPORTUNITY"
+    ],
+    default="LOW_OPPORTUNITY_OR_SATURATED"
+)
+
+q25 = q25.sort_values(["votes_per_restaurant", "avg_rating"], ascending=[False, False])
+
+
+# =========================================================
+# OPTIONAL: Print important outputs
+# =========================================================
+print("\nQUESTION 14: Market saturation")
+print(q14.head())
+
+print("\nQUESTION 20: Cuisine opportunity")
+print(q20.head())
+
+print("\nQUESTION 24: Expansion score")
+print(q24.head())
+
+print("\nQUESTION 25: Opportunity buckets")
+print(q25.head())
